@@ -11,7 +11,9 @@ Format: `<description> (by <contributor>, <pr number>)`
 
 ### Fixed
 
-...
+- Ignore commented links for LSP diagnostics. Use an AST to parse files, fixing
+  other similar edge cases. (by @WhyNotHugo, 638)
+
 
 ## 0.15.2
 
