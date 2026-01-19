@@ -266,7 +266,7 @@ func (d *NoteDAO) FindIdsByHref(href string, allowPartialHref bool) ([]core.Note
 
 	href = regexp.QuoteMeta(href)
 
-	// Prioritise exact match with extension
+	// Prioritise exact match with extension.
 	exactWithMdIds, err := d.findIdsByPathRegex("^" + href + "\\.md$")
 	if err != nil {
 		return nil, err
@@ -276,17 +276,22 @@ func (d *NoteDAO) FindIdsByHref(href string, allowPartialHref bool) ([]core.Note
 	}
 
 	if allowPartialHref {
+		// Filename (not path) contains 'href' anywhere.
 		ids, err := d.findIdsByPathRegex("^(.*/)?[^/]*" + href + "[^/]*$")
 		if len(ids) > 0 || err != nil {
 			return ids, err
 		}
 
+		// Path contains 'href' anywhere.
 		ids, err = d.findIdsByPathRegex(".*" + href + ".*")
 		if len(ids) > 0 || err != nil {
 			return ids, err
 		}
 	}
 
+	// Path either:
+	// 1. starts with 'href' and contains no slashes.
+	// 2. starts with 'href', followed by slash and then non-slash content.
 	ids, err := d.findIdsByPathRegex("^(?:" + href + "[^/]*|" + href + "/.+)$")
 	if len(ids) > 0 || err != nil {
 		return ids, err
