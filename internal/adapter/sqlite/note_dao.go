@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -22,13 +23,15 @@ type NoteDAO struct {
 	logger util.Logger
 
 	// Prepared SQL statements
-	indexedStmt            *LazyStmt
-	addStmt                *LazyStmt
-	updateStmt             *LazyStmt
-	removeStmt             *LazyStmt
-	findIDByPathStmt       *LazyStmt
-	findIdsByPathRegexStmt *LazyStmt
-	findByIDStmt           *LazyStmt
+	indexedStmt               *LazyStmt
+	addStmt                   *LazyStmt
+	updateStmt                *LazyStmt
+	removeStmt                *LazyStmt
+	findIDByPathStmt          *LazyStmt
+	findIdsByFilenameLikeStmt *LazyStmt
+	findIdsByPathLikeStmt     *LazyStmt
+	findIdsByPathPrefixStmt   *LazyStmt
+	findByIDStmt              *LazyStmt
 }
 
 // NewNoteDAO creates a new instance of a DAO working on the given database
@@ -46,8 +49,8 @@ func NewNoteDAO(tx Transaction, logger util.Logger) *NoteDAO {
 
 		// Add a new note to the index.
 		addStmt: tx.PrepareLazy(`
-			INSERT INTO notes (path, sortable_path, title, lead, body, raw_content, word_count, metadata, checksum, created, modified)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO notes (path, sortable_path, filename, title, lead, body, raw_content, word_count, metadata, checksum, created, modified)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`),
 
 		// Update the content of a note.
@@ -69,12 +72,25 @@ func NewNoteDAO(tx Transaction, logger util.Logger) *NoteDAO {
 			 WHERE path = ?
 		`),
 
-		// Find note IDs from a regex matching their path.
-		findIdsByPathRegexStmt: tx.PrepareLazy(`
+		// Find note IDs by filename LIKE pattern.
+		findIdsByFilenameLikeStmt: tx.PrepareLazy(`
 			SELECT id FROM notes
-			 WHERE path REGEXP ?
-				-- To find the best match possible, we sort by path length.
-				-- See https://github.com/zk-org/zk/issues/23
+			 WHERE filename LIKE ? ESCAPE '\'
+			 ORDER BY LENGTH(path) ASC
+		`),
+
+		// Find note IDs by path LIKE pattern.
+		findIdsByPathLikeStmt: tx.PrepareLazy(`
+			SELECT id FROM notes
+			 WHERE path LIKE ? ESCAPE '\'
+			 ORDER BY LENGTH(path) ASC
+		`),
+
+		// Find note IDs where href is a complete leading path component.
+		findIdsByPathPrefixStmt: tx.PrepareLazy(`
+			SELECT id FROM notes
+			 WHERE (path LIKE ? ESCAPE '\' AND path NOT LIKE ? ESCAPE '\')
+			    OR path LIKE ? ESCAPE '\'
 			 ORDER BY LENGTH(path) ASC
 		`),
 
@@ -133,10 +149,11 @@ func (d *NoteDAO) Add(note core.Note) (core.NoteID, error) {
 	// \x01 is used instead of \x00, because SQLite treats \x00 as and end of
 	// string.
 	sortablePath := strings.ReplaceAll(note.Path, "/", "\x01")
+	filename := filepath.Base(note.Path)
 
 	metadata := d.metadataToJSON(note)
 	res, err := d.addStmt.Exec(
-		note.Path, sortablePath, note.Title, note.Lead, note.Body,
+		note.Path, sortablePath, filename, note.Title, note.Lead, note.Body,
 		note.RawContent, note.WordCount, metadata, note.Checksum, note.Created,
 		note.Modified,
 	)
@@ -217,9 +234,25 @@ func idForRow(row *sql.Row) (core.NoteID, error) {
 	}
 }
 
-func (d *NoteDAO) findIdsByPathRegex(regex string) ([]core.NoteID, error) {
+func (d *NoteDAO) findIdsByFilenameLike(pattern string) ([]core.NoteID, error) {
+	return d.findIdsWithStmt(d.findIdsByFilenameLikeStmt, pattern)
+}
+
+func (d *NoteDAO) findIdsByPathLike(pattern string) ([]core.NoteID, error) {
+	return d.findIdsWithStmt(d.findIdsByPathLikeStmt, pattern)
+}
+
+func (d *NoteDAO) findIdsByPathPrefix(href string) ([]core.NoteID, error) {
+	// Three params:
+	// 1. href% for prefix,
+	// 2. href%/% to exclude slashes after href,
+	// 3. href/% for directory
+	return d.findIdsWithStmt(d.findIdsByPathPrefixStmt, href+"%", href+"%/%", href+"/%")
+}
+
+func (d *NoteDAO) findIdsWithStmt(stmt *LazyStmt, args ...any) ([]core.NoteID, error) {
 	ids := []core.NoteID{}
-	rows, err := d.findIdsByPathRegexStmt.Query(regex)
+	rows, err := stmt.Query(args...)
 	if err != nil {
 		return ids, err
 	}
@@ -264,35 +297,36 @@ func (d *NoteDAO) FindIdsByHref(href string, allowPartialHref bool) ([]core.Note
 	// matching a sub-section in the note.
 	href = strings.SplitN(href, "#", 2)[0]
 
-	href = regexp.QuoteMeta(href)
+	href = strings.NewReplacer("%", "\\%", "_", "\\_").Replace(href)
 
 	// Prioritise exact match with extension.
-	exactWithMdIds, err := d.findIdsByPathRegex("^" + href + "\\.md$")
+	id, err := d.FindIDByPath(href + ".md")
 	if err != nil {
 		return nil, err
 	}
-	if len(exactWithMdIds) > 0 {
-		return exactWithMdIds, nil
+	if id.IsValid() {
+		return []core.NoteID{id}, nil
 	}
 
+	var ids []core.NoteID
 	if allowPartialHref {
 		// Filename (not path) contains 'href' anywhere.
-		ids, err := d.findIdsByPathRegex("^(.*/)?[^/]*" + href + "[^/]*$")
+		ids, err = d.findIdsByFilenameLike("%" + href + "%")
 		if len(ids) > 0 || err != nil {
 			return ids, err
 		}
 
 		// Path contains 'href' anywhere.
-		ids, err = d.findIdsByPathRegex(".*" + href + ".*")
+		ids, err = d.findIdsByPathLike("%" + href + "%")
 		if len(ids) > 0 || err != nil {
 			return ids, err
 		}
 	}
 
 	// Path either:
-	// 1. starts with 'href' and contains no slashes.
-	// 2. starts with 'href', followed by slash and then non-slash content.
-	ids, err := d.findIdsByPathRegex("^(?:" + href + "[^/]*|" + href + "/.+)$")
+	// 1. starts with 'href' and has no slash after href.
+	// 2. starts with 'href/', followed by more content.
+	ids, err = d.findIdsByPathPrefix(href)
 	if len(ids) > 0 || err != nil {
 		return ids, err
 	}
