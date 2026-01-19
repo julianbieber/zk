@@ -14,6 +14,8 @@ Format: `<description> (by <contributor>, <pr number>)`
 - Ignore commented links for LSP diagnostics. Use an AST to parse files, fixing
   other similar edge cases. (by @WhyNotHugo, 638)
 - Links in markdown footnotes now included in :ZkLinks (by @WhyNotHugo, 639)
+- Indexing notebook now 35% and 74% faster for full and incremental indexing
+  respectively (by @WhyNotHugo, 642)
 
 
 ## 0.15.2
