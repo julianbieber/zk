@@ -26,9 +26,9 @@ type NoteDAO struct {
 	addStmt                *LazyStmt
 	updateStmt             *LazyStmt
 	removeStmt             *LazyStmt
-	findIdByPathStmt       *LazyStmt
+	findIDByPathStmt       *LazyStmt
 	findIdsByPathRegexStmt *LazyStmt
-	findByIdStmt           *LazyStmt
+	findByIDStmt           *LazyStmt
 }
 
 // NewNoteDAO creates a new instance of a DAO working on the given database
@@ -64,7 +64,7 @@ func NewNoteDAO(tx Transaction, logger util.Logger) *NoteDAO {
 		`),
 
 		// Find a note ID from its exact path.
-		findIdByPathStmt: tx.PrepareLazy(`
+		findIDByPathStmt: tx.PrepareLazy(`
 			SELECT id FROM notes
 			 WHERE path = ?
 		`),
@@ -79,7 +79,7 @@ func NewNoteDAO(tx Transaction, logger util.Logger) *NoteDAO {
 		`),
 
 		// Find a note from its ID.
-		findByIdStmt: tx.PrepareLazy(`
+		findByIDStmt: tx.PrepareLazy(`
 			SELECT id, path, title, lead, body, raw_content, word_count, created, modified, metadata, checksum, tags, lead AS snippet
 			  FROM notes_with_metadata
 			 WHERE id = ?
@@ -144,17 +144,17 @@ func (d *NoteDAO) Add(note core.Note) (core.NoteID, error) {
 		return 0, err
 	}
 
-	lastId, err := res.LastInsertId()
+	lastID, err := res.LastInsertId()
 	if err != nil {
 		return 0, err
 	}
 
-	return core.NoteID(lastId), err
+	return core.NoteID(lastID), err
 }
 
 // Update modifies an existing note.
 func (d *NoteDAO) Update(note core.Note) (core.NoteID, error) {
-	id, err := d.FindIdByPath(note.Path)
+	id, err := d.FindIDByPath(note.Path)
 	if err != nil {
 		return 0, err
 	}
@@ -183,7 +183,7 @@ func (d *NoteDAO) metadataToJSON(note core.Note) string {
 
 // Remove deletes the note with the given path from the index.
 func (d *NoteDAO) Remove(path string) error {
-	id, err := d.FindIdByPath(path)
+	id, err := d.FindIDByPath(path)
 	if err != nil {
 		return err
 	}
@@ -195,8 +195,8 @@ func (d *NoteDAO) Remove(path string) error {
 	return err
 }
 
-func (d *NoteDAO) FindIdByPath(path string) (core.NoteID, error) {
-	row, err := d.findIdByPathStmt.QueryRow(path)
+func (d *NoteDAO) FindIDByPath(path string) (core.NoteID, error) {
+	row, err := d.findIDByPathStmt.QueryRow(path)
 	if err != nil {
 		return core.NoteID(0), err
 	}
@@ -238,26 +238,7 @@ func (d *NoteDAO) findIdsByPathRegex(regex string) ([]core.NoteID, error) {
 	return ids, nil
 }
 
-func (d *NoteDAO) findIdWithStmt(stmt *LazyStmt, args ...interface{}) (core.NoteID, error) {
-	row, err := stmt.QueryRow(args...)
-	if err != nil {
-		return core.NoteID(0), err
-	}
-
-	var id sql.NullInt64
-	err = row.Scan(&id)
-
-	switch {
-	case err == sql.ErrNoRows:
-		return 0, nil
-	case err != nil:
-		return 0, err
-	default:
-		return core.NoteID(id.Int64), nil
-	}
-}
-
-func (d *NoteDAO) FindIdByHref(href string, allowPartialHref bool) (core.NoteID, error) {
+func (d *NoteDAO) FindIDByHref(href string, allowPartialHref bool) (core.NoteID, error) {
 	ids, err := d.FindIdsByHref(href, allowPartialHref)
 	if len(ids) == 0 || err != nil {
 		return 0, err
@@ -448,7 +429,7 @@ func (d *NoteDAO) findRows(opts core.NoteFindOpts, selection noteSelection) (*sq
 	joinClauses := []string{}
 	whereExprs := []string{}
 	additionalOrderTerms := []string{}
-	args := []interface{}{}
+	args := []any{}
 	groupBy := ""
 
 	transitiveClosure := false
@@ -545,7 +526,6 @@ func (d *NoteDAO) findRows(opts core.NoteFindOpts, selection noteSelection) (*sq
 				whereExprs = append(whereExprs, "n.raw_content REGEXP ?")
 				args = append(args, match)
 			}
-			break
 		}
 	}
 
@@ -714,11 +694,11 @@ WHERE collection_id IN (SELECT id FROM collections t WHERE kind = '%s' AND (%s))
 	orderTerms = append(orderTerms, additionalOrderTerms...)
 	orderTerms = append(orderTerms, `n.title ASC`)
 
-	query := ""
+	var query strings.Builder
 
 	// Credit to https://inviqa.com/blog/storing-graphs-database-sql-meets-social-network
 	if transitiveClosure {
-		query += `WITH RECURSIVE transitive_closure(source_id, target_id, title, snippet, distance, path) AS (
+		query.WriteString(`WITH RECURSIVE transitive_closure(source_id, target_id, title, snippet, distance, path) AS (
     SELECT source_id, target_id, title, snippet,
            1 AS distance,
            '.' || source_id || '.' || target_id || '.' AS path
@@ -732,63 +712,50 @@ WHERE collection_id IN (SELECT id FROM collections t WHERE kind = '%s' AND (%s))
       FROM links AS l
       JOIN transitive_closure AS tc
         ON l.source_id = tc.target_id
-     WHERE tc.path NOT LIKE '%.' || l.target_id || '.%'`
+     WHERE tc.path NOT LIKE '%.' || l.target_id || '.%'`)
 
 		if maxDistance != 0 {
-			query += fmt.Sprintf(" AND tc.distance < %d", maxDistance)
+			fmt.Fprintf(&query, " AND tc.distance < %d", maxDistance)
 		}
 
 		// Guard against infinite loops by limiting the number of recursions.
-		query += "\n     LIMIT 100000"
+		query.WriteString("\n     LIMIT 100000")
 
-		query += "\n)\n"
+		query.WriteString("\n)\n")
 	}
 
-	query += "SELECT n.id"
+	query.WriteString("SELECT n.id")
 	if selection != noteSelectionID {
-		query += ", n.path, n.title, n.metadata"
+		query.WriteString(", n.path, n.title, n.metadata")
 		if selection != noteSelectionMinimal {
-			query += fmt.Sprintf(", n.lead, n.body, n.raw_content, n.word_count, n.created, n.modified, n.checksum, n.tags, %s AS snippet", snippetCol)
+			fmt.Fprintf(&query, ", n.lead, n.body, n.raw_content, n.word_count, n.created, n.modified, n.checksum, n.tags, %s AS snippet", snippetCol)
 		}
 	}
 
-	query += "\nFROM notes_with_metadata n\n"
+	query.WriteString("\nFROM notes_with_metadata n\n")
 
 	for _, clause := range joinClauses {
-		query += clause + "\n"
+		query.WriteString(clause + "\n")
 	}
 
 	if len(whereExprs) > 0 {
-		query += "WHERE " + strings.Join(whereExprs, "\nAND ") + "\n"
+		query.WriteString("WHERE " + strings.Join(whereExprs, "\nAND ") + "\n")
 	}
 
 	if groupBy != "" {
-		query += groupBy + "\n"
+		query.WriteString(groupBy + "\n")
 	}
 
-	query += "ORDER BY " + strings.Join(orderTerms, ", ") + "\n"
+	query.WriteString("ORDER BY " + strings.Join(orderTerms, ", ") + "\n")
 
 	if opts.Limit > 0 {
-		query += fmt.Sprintf("LIMIT %d\n", opts.Limit)
+		fmt.Fprintf(&query, "LIMIT %d\n", opts.Limit)
 	}
 
 	// d.logger.Println(query)
 	// d.logger.Println(args)
 
-	return d.tx.Query(query, args...)
-}
-
-func (d *NoteDAO) scanNoteID(row RowScanner) (core.NoteID, error) {
-	var id int
-	err := row.Scan(&id)
-	switch {
-	case err == sql.ErrNoRows:
-		return 0, nil
-	case err != nil:
-		return 0, err
-	default:
-		return core.NoteID(id), nil
-	}
+	return d.tx.Query(query.String(), args...)
 }
 
 func (d *NoteDAO) scanMinimalNote(row RowScanner) (*core.MinimalNote, error) {
@@ -910,7 +877,7 @@ func buildMentionQuery(title, metadataJSON string) string {
 	if err == nil {
 		if aliases, ok := metadata["aliases"]; ok {
 			switch aliases := aliases.(type) {
-			case []interface{}:
+			case []any:
 				for _, alias := range aliases {
 					appendTitle(fmt.Sprint(alias))
 				}
