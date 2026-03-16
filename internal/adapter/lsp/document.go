@@ -14,6 +14,7 @@ import (
 	gmext "github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+	"github.com/zk-org/zk/internal/adapter/markdown"
 	"github.com/zk-org/zk/internal/adapter/markdown/extensions"
 	"github.com/zk-org/zk/internal/core"
 	"github.com/zk-org/zk/internal/util"
@@ -204,7 +205,6 @@ var documentParser = goldmark.New(
 	goldmark.WithExtensions(
 		gmext.Footnote,
 		extensions.WikiLinkExt,
-		extensions.MarkdownLinkExt,
 	),
 )
 
@@ -264,7 +264,7 @@ func (d *document) DocumentLinks() ([]documentLink, error) {
 		}
 
 		switch link := n.(type) {
-		case *extensions.MarkdownLink:
+		case *ast.Link:
 			href := string(link.Destination)
 			if href == "" {
 				return ast.WalkContinue, nil
@@ -279,12 +279,17 @@ func (d *document) DocumentLinks() ([]documentLink, error) {
 				href = decodedHref
 			}
 
+			pos := markdown.GetLinkPosition(link, source)
+			if pos == nil {
+				return ast.WalkContinue, nil
+			}
+
 			links = append(links, documentLink{
 				Href:          href,
 				RelativeToDir: filepath.Dir(d.Path),
 				Range: protocol.Range{
-					Start: byteOffsetToPosition(link.StartOffset, source, lineOffsets),
-					End:   byteOffsetToPosition(link.EndOffset, source, lineOffsets),
+					Start: byteOffsetToPosition(pos.Start, source, lineOffsets),
+					End:   byteOffsetToPosition(pos.End, source, lineOffsets),
 				},
 				IsWikiLink: false,
 			})

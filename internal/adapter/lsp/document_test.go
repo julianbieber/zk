@@ -237,6 +237,11 @@ func TestDocumentLinks_ComplexContent(t *testing.T) {
 			content:       "[**bold**](one.md) and [*italic*](two.md)",
 			expectedHrefs: []string{"one.md", "two.md"},
 		},
+		{
+			name:          "link with newline in text",
+			content:       "[link\ntext](dest.md)",
+			expectedHrefs: []string{"dest.md"},
+		},
 	}
 
 	for _, tt := range tests {
