@@ -540,8 +540,8 @@ func (s *Server) noteForLink(link documentLink, notebook *core.Notebook) (*Note,
 		return nil, err
 	}
 
-	joined_path := filepath.Join(notebook.Path, note.Path)
-	return &Note{*note, pathToURI(joined_path)}, nil
+	joinedPath := filepath.Join(notebook.Path, note.Path)
+	return &Note{*note, pathToURI(joinedPath)}, nil
 }
 
 // noteForHref returns the Note object for the note targeted by the given HREF
