@@ -936,10 +936,6 @@ func isTrue(v *bool) bool {
 	return v != nil && *v
 }
 
-func isFalse(v *bool) bool {
-	return v == nil || *v == false
-}
-
 func stringPtr(v string) *string {
 	s := v
 	return &s
