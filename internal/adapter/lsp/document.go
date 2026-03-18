@@ -147,10 +147,7 @@ func (d *document) LookBehind(pos protocol.Position, length int) string {
 	}
 	utf16Bytes := utf16.Encode([]rune(line))
 
-	charIdx := int(pos.Character)
-	if charIdx > len(utf16Bytes) {
-		charIdx = len(utf16Bytes)
-	}
+	charIdx := min(int(pos.Character), len(utf16Bytes))
 
 	if length > charIdx {
 		return string(utf16.Decode(utf16Bytes[0:charIdx]))
