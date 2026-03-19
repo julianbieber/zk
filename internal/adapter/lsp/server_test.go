@@ -73,8 +73,8 @@ func TestServer_buildInvokedCompletionList(t *testing.T) {
 	}
 	defer db.Close()
 
-	index := sqlite.NewNoteIndex(fixture.Path, db, &util.NullLogger)
 	config := core.NewDefaultConfig()
+	index := sqlite.NewNoteIndex(fixture.Path, db, &util.NullLogger, config.Note.Extension)
 
 	// Initialize markdown parser directly
 	parser := markdown.NewParser(markdown.ParserOpts{

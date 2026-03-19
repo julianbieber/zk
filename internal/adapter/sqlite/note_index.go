@@ -20,6 +20,7 @@ type NoteIndex struct {
 	db           *DB
 	dao          *dao
 	logger       util.Logger
+	extension    string
 }
 
 type dao struct {
@@ -29,11 +30,12 @@ type dao struct {
 	metadata    *MetadataDAO
 }
 
-func NewNoteIndex(notebookPath string, db *DB, logger util.Logger) *NoteIndex {
+func NewNoteIndex(notebookPath string, db *DB, logger util.Logger, extension string) *NoteIndex {
 	return &NoteIndex{
 		notebookPath: notebookPath,
 		db:           db,
 		logger:       logger,
+		extension:    extension,
 	}
 }
 
@@ -349,7 +351,7 @@ func (ni *NoteIndex) commit(transaction func(dao *dao) error) error {
 	} else {
 		return ni.db.WithTransaction(func(tx Transaction) error {
 			dao := dao{
-				notes:       NewNoteDAO(tx, ni.logger),
+				notes:       NewNoteDAO(tx, ni.logger, ni.extension),
 				links:       NewLinkDAO(tx, ni.logger),
 				collections: NewCollectionDAO(tx, ni.logger),
 				metadata:    NewMetadataDAO(tx),

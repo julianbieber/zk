@@ -19,8 +19,9 @@ import (
 
 // NoteDAO persists notes in the SQLite database.
 type NoteDAO struct {
-	tx     Transaction
-	logger util.Logger
+	tx        Transaction
+	logger    util.Logger
+	extension string
 
 	// Prepared SQL statements
 	indexedStmt               *LazyStmt
@@ -36,10 +37,11 @@ type NoteDAO struct {
 
 // NewNoteDAO creates a new instance of a DAO working on the given database
 // transaction.
-func NewNoteDAO(tx Transaction, logger util.Logger) *NoteDAO {
+func NewNoteDAO(tx Transaction, logger util.Logger, extension string) *NoteDAO {
 	return &NoteDAO{
-		tx:     tx,
-		logger: logger,
+		tx:        tx,
+		logger:    logger,
+		extension: extension,
 
 		// Get file info about all indexed notes.
 		indexedStmt: tx.PrepareLazy(`
@@ -300,7 +302,7 @@ func (d *NoteDAO) FindIdsByHref(href string, allowPartialHref bool) ([]core.Note
 	href = strings.NewReplacer("%", "\\%", "_", "\\_").Replace(href)
 
 	// Prioritise exact match with extension.
-	id, err := d.FindIDByPath(href + ".md")
+	id, err := d.FindIDByPath(href + "." + d.extension)
 	if err != nil {
 		return nil, err
 	}
