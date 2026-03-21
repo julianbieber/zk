@@ -9,6 +9,8 @@ Format: `<description> (by <contributor>, <pr number>)`
 
 ### Added
 
+- `zk config --list <object>` (by @andrebauer, 484)
+
 ### Fixed
 
 - Ignore commented links for LSP diagnostics. Use an AST to parse files, fixing
