@@ -236,22 +236,6 @@ func idForRow(row *sql.Row) (core.NoteID, error) {
 	}
 }
 
-func (d *NoteDAO) findIDsByFilenameLike(pattern string) ([]core.NoteID, error) {
-	return d.findIDsWithStmt(d.findIDsByFilenameLikeStmt, pattern)
-}
-
-func (d *NoteDAO) findIDsByPathLike(pattern string) ([]core.NoteID, error) {
-	return d.findIDsWithStmt(d.findIDsByPathLikeStmt, pattern)
-}
-
-func (d *NoteDAO) findIDsByPathPrefix(href string) ([]core.NoteID, error) {
-	// Three params:
-	// 1. href% for prefix,
-	// 2. href%/% to exclude slashes after href,
-	// 3. href/% for directory
-	return d.findIDsWithStmt(d.findIDsByPathPrefixStmt, href+"%", href+"%/%", href+"/%")
-}
-
 func (d *NoteDAO) findIDsWithStmt(stmt *LazyStmt, args ...any) ([]core.NoteID, error) {
 	ids := []core.NoteID{}
 	rows, err := stmt.Query(args...)
@@ -314,13 +298,13 @@ func (d *NoteDAO) FindIdsByHref(href string, allowPartialHref bool) ([]core.Note
 	var ids []core.NoteID
 	if allowPartialHref {
 		// Filename (not path) contains 'href' anywhere.
-		ids, err = d.findIDsByFilenameLike("%" + href + "%")
+		ids, err = d.findIDsWithStmt(d.findIDsByFilenameLikeStmt, "%"+href+"%")
 		if len(ids) > 0 || err != nil {
 			return ids, err
 		}
 
 		// Path contains 'href' anywhere.
-		ids, err = d.findIDsByPathLike("%" + href + "%")
+		ids, err = d.findIDsWithStmt(d.findIDsByPathLikeStmt, "%"+href+"%")
 		if len(ids) > 0 || err != nil {
 			return ids, err
 		}
@@ -329,7 +313,11 @@ func (d *NoteDAO) FindIdsByHref(href string, allowPartialHref bool) ([]core.Note
 	// Path either:
 	// 1. starts with 'href' and has no slash after href.
 	// 2. starts with 'href/', followed by more content.
-	ids, err = d.findIDsByPathPrefix(href)
+	// Three params:
+	// 1. href% for prefix,
+	// 2. href%/% to exclude slashes after href,
+	// 3. href/% for directory
+	ids, err = d.findIDsWithStmt(d.findIDsByPathPrefixStmt, href+"%", href+"%/%", href+"/%")
 	if len(ids) > 0 || err != nil {
 		return ids, err
 	}

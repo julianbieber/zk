@@ -71,21 +71,18 @@ func (ni *NoteIndex) findLinkMatch(dao *dao, baseDir string, href string, linkTy
 		return 0, nil
 	}
 
-	id, _ := ni.findPathMatch(dao, baseDir, href)
-	if id.IsValid() {
-		return id, nil
+	// Try exact path match first
+	pathHref, err := ni.relNotebookPath(baseDir, href)
+	if err == nil {
+		id, _ := dao.notes.FindIDByHref(pathHref, false)
+		if id.IsValid() {
+			return id, nil
+		}
 	}
 
+	// Fall back to partial matching for wiki links
 	allowPartialMatch := (linkType == core.LinkTypeWikiLink)
 	return dao.notes.FindIDByHref(href, allowPartialMatch)
-}
-
-func (ni *NoteIndex) findPathMatch(dao *dao, baseDir string, href string) (core.NoteID, error) {
-	href, err := ni.relNotebookPath(baseDir, href)
-	if err != nil {
-		return 0, err
-	}
-	return dao.notes.FindIDByHref(href, false)
 }
 
 // FindLinksBetweenNotes implements core.NoteIndex.
