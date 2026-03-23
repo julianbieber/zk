@@ -57,15 +57,6 @@ func (ni *NoteIndex) FindMinimal(opts core.NoteFindOpts) (notes []core.MinimalNo
 	return
 }
 
-// FindLinkMatch implements core.NoteIndex.
-func (ni *NoteIndex) FindLinkMatch(baseDir string, href string, linkType core.LinkType) (id core.NoteID, err error) {
-	err = ni.commit(func(dao *dao) error {
-		id, err = ni.findLinkMatch(dao, baseDir, href, linkType)
-		return err
-	})
-	return
-}
-
 func (ni *NoteIndex) findLinkMatch(dao *dao, baseDir string, href string, linkType core.LinkType) (core.NoteID, error) {
 	if strutil.IsURL(href) {
 		return 0, nil
