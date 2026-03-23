@@ -265,6 +265,8 @@ func (d *NoteDAO) FindIDByHref(href string, allowPartialHref bool) (core.NoteID,
 	return ids[0], nil
 }
 
+// findIDsByHrefs returns the ID of notes with the given href.
+// The href is treated as relative to the notebook root.
 func (d *NoteDAO) findIDsByHrefs(hrefs []string, allowPartialHrefs bool) ([]core.NoteID, error) {
 	ids := make([]core.NoteID, 0)
 	for _, href := range hrefs {
