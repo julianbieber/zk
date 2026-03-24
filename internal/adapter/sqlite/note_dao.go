@@ -257,14 +257,6 @@ func (d *NoteDAO) findIDsWithStmt(stmt *LazyStmt, args ...any) ([]core.NoteID, e
 	return ids, nil
 }
 
-func (d *NoteDAO) FindIDByHref(href string, allowPartialHref bool) (core.NoteID, error) {
-	ids, err := d.FindIdsByHref(href, allowPartialHref)
-	if len(ids) == 0 || err != nil {
-		return 0, err
-	}
-	return ids[0], nil
-}
-
 // findIDsByHrefs returns the ID of notes with the given href.
 // The href is treated as relative to the notebook root.
 func (d *NoteDAO) findIDsByHrefs(hrefs []string, allowPartialHrefs bool) ([]core.NoteID, error) {

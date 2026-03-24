@@ -57,23 +57,92 @@ func (ni *NoteIndex) FindMinimal(opts core.NoteFindOpts) (notes []core.MinimalNo
 	return
 }
 
+// findLinkMatch finds note IDs which match the given href string.
+// This implements logic similar to NoteIndex.linkMatchesPath.
 func (ni *NoteIndex) findLinkMatch(dao *dao, baseDir string, href string, linkType core.LinkType) (core.NoteID, error) {
-	if strutil.IsURL(href) {
+	if href == "" || strutil.IsURL(href) {
 		return 0, nil
 	}
 
-	// Try exact path match first
-	pathHref, err := ni.relNotebookPath(baseDir, href)
-	if err == nil {
-		id, _ := dao.notes.FindIDByHref(pathHref, false)
-		if id.IsValid() {
-			return id, nil
+	// Remove any anchor, if any.
+	href = strings.SplitN(href, "#", 2)[0]
+
+	// Relative path: prefix with no slash after, or immediately followed by slash.
+	relHref, err := ni.relNotebookPath(baseDir, href)
+	if err != nil {
+		return 0, err
+	}
+	id, err := ni.findByPathPrefix(dao, relHref)
+	if err != nil {
+		return 0, err
+	}
+	if id.IsValid() {
+		return id, nil
+	}
+
+	if linkType == core.LinkTypeWikiLink {
+		// Filename contains href.
+		ids, err := dao.notes.findIDsWithStmt(dao.notes.findIDsByFilenameLikeStmt, "%"+escapeLike(href)+"%")
+		if err != nil {
+			return 0, err
+		}
+		if len(ids) > 0 {
+			return ids[0], nil
+		}
+
+		// Path contains href.
+		ids, err = dao.notes.findIDsWithStmt(dao.notes.findIDsByPathLikeStmt, "%"+escapeLike(href)+"%")
+		if err != nil {
+			return 0, err
+		}
+		if len(ids) > 0 {
+			return ids[0], nil
 		}
 	}
 
-	// Fall back to partial matching for wiki links
-	allowPartialMatch := (linkType == core.LinkTypeWikiLink)
-	return dao.notes.FindIDByHref(href, allowPartialMatch)
+	// Absolute path: prefix with no slash after, or followed by slash.
+	return ni.findByPathPrefix(dao, href)
+}
+
+// findByPathPrefix finds a note where path has prefix href (no slash after) or href/ (directory).
+func (ni *NoteIndex) findByPathPrefix(dao *dao, href string) (core.NoteID, error) {
+	// Try exact match with extension first (most common case).
+	id, err := dao.notes.FindIDByPath(href + "." + ni.extension)
+	if err != nil {
+		return 0, err
+	}
+	if id.IsValid() {
+		return id, nil
+	}
+
+	// Try exact match without extension.
+	id, err = dao.notes.FindIDByPath(href)
+	if err != nil {
+		return 0, err
+	}
+	if id.IsValid() {
+		return id, nil
+	}
+
+	// Use LIKE patterns: href% but not href%/% (file prefix) OR href/% (directory).
+	href = escapeLike(href)
+	ids, err := dao.notes.findIDsWithStmt(
+		dao.notes.findIDsByPathPrefixStmt,
+		href+"%", href+"%/%", href+"/%",
+	)
+	if err != nil {
+		return 0, err
+	}
+	if len(ids) > 0 {
+		return ids[0], nil
+	}
+
+	return 0, nil
+}
+
+// escapeLike escapes special characters for SQL LIKE patterns.
+func escapeLike(s string) string {
+	return strings.NewReplacer("%", "\\%", "_", "\\_").Replace(s)
 }
 
 // FindLinksBetweenNotes implements core.NoteIndex.
@@ -115,7 +184,7 @@ func (ni *NoteIndex) Add(note core.Note) (id core.NoteID, err error) {
 		}
 		note.ID = id
 
-		err = ni.addLinks(dao, id, note.Links)
+		err = ni.addLinks(dao, id, note.Path, note.Links)
 		if err != nil {
 			return err
 		}
@@ -228,7 +297,7 @@ func (ni *NoteIndex) Update(note core.Note) error {
 		if err != nil {
 			return err
 		}
-		err = ni.addLinks(dao, id, note.Links)
+		err = ni.addLinks(dao, id, note.Path, note.Links)
 		if err != nil {
 			return err
 		}
@@ -262,19 +331,20 @@ func (ni *NoteIndex) associateTags(collections *CollectionDAO, noteID core.NoteI
 	return nil
 }
 
-func (ni *NoteIndex) addLinks(dao *dao, id core.NoteID, links []core.Link) error {
-	resolvedLinks, err := ni.resolveLinkNoteIDs(dao, id, links)
+func (ni *NoteIndex) addLinks(dao *dao, id core.NoteID, sourcePath string, links []core.Link) error {
+	resolvedLinks, err := ni.resolveLinkNoteIDs(dao, id, sourcePath, links)
 	if err != nil {
 		return err
 	}
 	return dao.links.Add(resolvedLinks)
 }
 
-func (ni *NoteIndex) resolveLinkNoteIDs(dao *dao, sourceID core.NoteID, links []core.Link) ([]core.ResolvedLink, error) {
+func (ni *NoteIndex) resolveLinkNoteIDs(dao *dao, sourceID core.NoteID, sourcePath string, links []core.Link) ([]core.ResolvedLink, error) {
 	resolvedLinks := []core.ResolvedLink{}
+	baseDir := filepath.Join(ni.notebookPath, filepath.Dir(sourcePath))
 
 	for _, link := range links {
-		targetID, err := ni.findLinkMatch(dao, "" /* base dir */, link.Href, link.Type)
+		targetID, err := ni.findLinkMatch(dao, baseDir, link.Href, link.Type)
 		if err != nil {
 			return resolvedLinks, err
 		}
