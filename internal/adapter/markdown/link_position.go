@@ -24,7 +24,7 @@ func GetLinkPosition(link *ast.Link, source []byte) *LinkPosition {
 		}
 	}
 
-	start, end := calculateLinkPositions(link, source)
+	start, end := findLinkPositions(link, source)
 	if start < 0 || end <= start {
 		return nil
 	}
@@ -36,93 +36,27 @@ func GetLinkPosition(link *ast.Link, source []byte) *LinkPosition {
 	return &LinkPosition{Start: start, End: end}
 }
 
-// calculateLinkPositions finds the byte offsets for a Link node by scanning the source.
-// Returns (start of '[', end after ')').
-func calculateLinkPositions(link *ast.Link, source []byte) (int, int) {
-	// ast.Link node only stores start position. Scan for the exact end position.
-
+// findLinkPositions finds the byte offsets for a Link node.
+// Returns (start of '[', end after ')' or ']').
+func findLinkPositions(link *ast.Link, source []byte) (int, int) {
+	// Use the upstream position for the start of the link.
 	linkStart := link.Pos()
-
-	// Find the end of the link by scanning forward from the text content.
-	textEnd := findLastTextPosition(link)
-	if textEnd < 0 {
-		return linkStart, -1
+	if linkStart < 0 {
+		return -1, -1
 	}
 
-	linkEnd := -1
-	i := textEnd
-
-	if source[i] != ']' {
-		// TODO: Should warn here? Is this even reachable?
-		return linkStart, textEnd
-	}
-	i++ // skip ']'
-
-	if i >= len(source) {
-		// Link of the style [link].
-		return linkStart, textEnd + 1
+	// Find the position of the next sibling node (or EOF)…
+	searchStart := len(source)
+	if next := ast.Node(link).NextSibling(); next != nil {
+		searchStart = next.Pos()
 	}
 
-	if source[i] == '(' {
-		// Inline link: scan to find matching parenthesis.
-		i++ // skip '('
-		parenDepth := 1
-		for i < len(source) && parenDepth > 0 {
-			// Ignore escaped characters (potentially, parenthesis).
-			if source[i] == '\\' && i+1 < len(source) {
-				i += 2
-				continue
-			}
-			if source[i] == '(' {
-				parenDepth++
-			} else if source[i] == ')' {
-				parenDepth--
-				if parenDepth == 0 {
-					linkEnd = i + 1
-					break
-				}
-			}
-			i++
+	// … Then walk backwards to the first `]` or `)`.
+	for i := searchStart - 1; i > linkStart; i-- {
+		if source[i] == ')' || source[i] == ']' {
+			return linkStart, i + 1
 		}
-	} else if source[i] == '[' {
-		// Reference link: [text][label]. Scan to find matching brace.
-		i++ // skip '['
-		for i < len(source) {
-			// Ignore escaped characters (potentially, parenthesis).
-			if source[i] == '\\' && i+1 < len(source) {
-				i += 2
-				continue
-			}
-			if source[i] == ']' {
-				linkEnd = i + 1
-				break
-			}
-			i++
-		}
-	} else {
-		// Collapsed reference link [text][] or shortcut reference link [text].
-		// The ']' we already passed is the end.
-		linkEnd = textEnd + 1
 	}
 
-	return linkStart, linkEnd
-}
-
-// findLastTextPosition finds the last text position within a node.
-// Handles nested text nodes (e.g.: emphasis, bold, etc.).
-func findLastTextPosition(parent ast.Node) int {
-	lastPos := -1
-
-	ast.Walk(parent, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
-		}
-
-		if text, ok := n.(*ast.Text); ok {
-			lastPos = text.Segment.Stop
-		}
-		return ast.WalkContinue, nil
-	})
-
-	return lastPos
+	return linkStart, -1
 }
