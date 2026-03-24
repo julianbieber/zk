@@ -39,26 +39,14 @@ func GetLinkPosition(link *ast.Link, source []byte) *LinkPosition {
 // calculateLinkPositions finds the byte offsets for a Link node by scanning the source.
 // Returns (start of '[', end after ')').
 func calculateLinkPositions(link *ast.Link, source []byte) (int, int) {
-	// ast.Link node doesn't store position information for delimiters. The
-	// parser knows these positions internally (in linkLabelState.Segment),
-	// but only transfers the URL and title to the final node. We need to
-	// scan for the exact positions.
+	// ast.Link node only stores start position. Scan for the exact end position.
 
-	textStart, textEnd := findFirstAndLastTextPositions(link)
-	if textStart < 0 {
-		return -1, -1
-	}
+	linkStart := link.Pos()
 
-	// Scan backwards from textStart to find '['.
-	linkStart := -1
-	for i := textStart - 1; i >= 0; i-- {
-		if source[i] == '[' {
-			linkStart = i
-			break
-		}
-		if source[i] == ']' || source[i] == '(' {
-			break
-		}
+	// Find the end of the link by scanning forward from the text content.
+	textEnd := findLastTextPosition(link)
+	if textEnd < 0 {
+		return linkStart, -1
 	}
 
 	linkEnd := -1
@@ -72,7 +60,7 @@ func calculateLinkPositions(link *ast.Link, source []byte) (int, int) {
 
 	if i >= len(source) {
 		// Link of the style [link].
-		return linkStart, textEnd
+		return linkStart, textEnd + 1
 	}
 
 	if source[i] == '(' {
@@ -112,18 +100,18 @@ func calculateLinkPositions(link *ast.Link, source []byte) (int, int) {
 			i++
 		}
 	} else {
-		// Unexpected character after ']'. Include the ']' in the range.
-		// TODO: I don't think this can happen.
+		// Collapsed reference link [text][] or shortcut reference link [text].
+		// The ']' we already passed is the end.
 		linkEnd = textEnd + 1
 	}
 
 	return linkStart, linkEnd
 }
 
-// findFirstAndLastTextPositions finds the first and last text positions within a node.
+// findLastTextPosition finds the last text position within a node.
 // Handles nested text nodes (e.g.: emphasis, bold, etc.).
-func findFirstAndLastTextPositions(parent ast.Node) (int, int) {
-	var firstPos, lastPos = -1, -1
+func findLastTextPosition(parent ast.Node) int {
+	lastPos := -1
 
 	ast.Walk(parent, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
@@ -131,13 +119,10 @@ func findFirstAndLastTextPositions(parent ast.Node) (int, int) {
 		}
 
 		if text, ok := n.(*ast.Text); ok {
-			if firstPos < 0 {
-				firstPos = text.Segment.Start
-			}
 			lastPos = text.Segment.Stop
 		}
 		return ast.WalkContinue, nil
 	})
 
-	return firstPos, lastPos
+	return lastPos
 }
