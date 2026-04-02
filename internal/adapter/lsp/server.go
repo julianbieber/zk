@@ -443,7 +443,7 @@ func NewServer(opts ServerOpts) *Server {
 			addAction("", "New note in top directory")
 		}
 
-		todoActions := server.getTodoCodeActions(doc, params.TextDocument.URI)
+		todoActions := server.getTodoCodeActions(doc, params.TextDocument.URI, int(params.Range.Start.Line))
 		actions = append(actions, todoActions...)
 
 		return actions, nil
@@ -1237,101 +1237,58 @@ func (s *Server) getMissingBacklinkCodeActions(doc *document, docURI protocol.Do
 	return actions
 }
 
-// frontmatterInfo holds the result of scanning a document's YAML frontmatter.
-type frontmatterInfo struct {
-	startLine int  // line index of opening ---
-	endLine   int  // line index of closing ---
-	hasTodo   bool // found "todo: true"
-	hasDone   bool // found a "done:" line
-	exists    bool // frontmatter was found
-}
-
-// parseFrontmatter scans document content for YAML frontmatter boundaries
-// and checks for todo/done keys.
-func parseFrontmatter(content string) frontmatterInfo {
-	lines := strings.Split(content, "\n")
-	info := frontmatterInfo{}
-
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return info
-	}
-	info.startLine = 0
-
-	for i := 1; i < len(lines); i++ {
-		trimmed := strings.TrimSpace(lines[i])
-		if trimmed == "---" || trimmed == "..." {
-			info.endLine = i
-			info.exists = true
-			return info
-		}
-		if strings.HasPrefix(trimmed, "todo:") && strings.Contains(trimmed, "true") {
-			info.hasTodo = true
-		}
-		if strings.HasPrefix(trimmed, "done:") {
-			info.hasDone = true
-		}
-	}
-
-	return info
-}
-
-// getTodoCodeActions returns code actions for managing TODO status in the
-// current document's YAML frontmatter.
-func (s *Server) getTodoCodeActions(doc *document, docURI protocol.DocumentUri) []protocol.CodeAction {
+// getTodoCodeActions returns code actions for toggling markdown checkbox TODOs
+// on the line at the cursor position.
+// - On a `- [ ]` line: offers "Mark as done" → `- [x] ... (YYYY-MM-DD)`
+// - On a `- [x]` line: offers "Reopen TODO" → `- [ ] ...` (removes date suffix)
+func (s *Server) getTodoCodeActions(doc *document, docURI protocol.DocumentUri, cursorLine int) []protocol.CodeAction {
 	actions := []protocol.CodeAction{}
-	fm := parseFrontmatter(doc.Content)
+	lines := doc.GetLines()
 
-	if !fm.hasTodo {
-		// Offer "Mark as TODO"
-		var edit protocol.TextEdit
-		if fm.exists {
-			// Insert before closing ---
-			edit = protocol.TextEdit{
-				Range: protocol.Range{
-					Start: protocol.Position{Line: protocol.UInteger(fm.endLine), Character: 0},
-					End:   protocol.Position{Line: protocol.UInteger(fm.endLine), Character: 0},
-				},
-				NewText: "todo: true\n",
-			}
-		} else {
-			// Create frontmatter block at the top
-			edit = protocol.TextEdit{
-				Range: protocol.Range{
-					Start: protocol.Position{Line: 0, Character: 0},
-					End:   protocol.Position{Line: 0, Character: 0},
-				},
-				NewText: "---\ntodo: true\n---\n",
-			}
-		}
-
-		actions = append(actions, protocol.CodeAction{
-			Title: "Mark as TODO",
-			Kind:  stringPtr(protocol.CodeActionKindQuickFix),
-			Edit: &protocol.WorkspaceEdit{
-				Changes: map[protocol.DocumentUri][]protocol.TextEdit{
-					docURI: {edit},
-				},
-			},
-		})
+	if cursorLine < 0 || cursorLine >= len(lines) {
+		return actions
 	}
 
-	if fm.hasTodo && !fm.hasDone {
+	line := lines[cursorLine]
+	trimmed := strings.TrimSpace(line)
+	lineLen := protocol.UInteger(len(line))
+
+	lineRange := protocol.Range{
+		Start: protocol.Position{Line: protocol.UInteger(cursorLine), Character: 0},
+		End:   protocol.Position{Line: protocol.UInteger(cursorLine), Character: lineLen},
+	}
+
+	if strings.Contains(trimmed, "- [ ] ") || strings.HasSuffix(trimmed, "- [ ]") {
 		// Offer "Mark as done"
 		today := time.Now().Format("2006-01-02")
-		edit := protocol.TextEdit{
-			Range: protocol.Range{
-				Start: protocol.Position{Line: protocol.UInteger(fm.endLine), Character: 0},
-				End:   protocol.Position{Line: protocol.UInteger(fm.endLine), Character: 0},
-			},
-			NewText: "done: " + today + "\n",
-		}
+		newLine := strings.Replace(line, "- [ ] ", "- [x] ", 1)
+		newLine = strings.Replace(newLine, "- [ ]", "- [x]", 1)
+		newLine = strings.TrimRight(newLine, " ") + " (" + today + ")"
 
 		actions = append(actions, protocol.CodeAction{
 			Title: "Mark as done (" + today + ")",
 			Kind:  stringPtr(protocol.CodeActionKindQuickFix),
 			Edit: &protocol.WorkspaceEdit{
 				Changes: map[protocol.DocumentUri][]protocol.TextEdit{
-					docURI: {edit},
+					docURI: {{Range: lineRange, NewText: newLine}},
+				},
+			},
+		})
+	} else if strings.Contains(trimmed, "- [x] ") || strings.Contains(trimmed, "- [X] ") {
+		// Offer "Reopen TODO" — uncheck and remove trailing date like " (2026-04-02)"
+		newLine := strings.Replace(line, "- [x] ", "- [ ] ", 1)
+		newLine = strings.Replace(newLine, "- [X] ", "- [ ] ", 1)
+		// Remove trailing parenthesized date pattern
+		if idx := strings.LastIndex(newLine, " ("); idx != -1 && strings.HasSuffix(strings.TrimSpace(newLine), ")") {
+			newLine = newLine[:idx]
+		}
+
+		actions = append(actions, protocol.CodeAction{
+			Title: "Reopen TODO",
+			Kind:  stringPtr(protocol.CodeActionKindQuickFix),
+			Edit: &protocol.WorkspaceEdit{
+				Changes: map[protocol.DocumentUri][]protocol.TextEdit{
+					docURI: {{Range: lineRange, NewText: newLine}},
 				},
 			},
 		})
