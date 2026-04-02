@@ -679,6 +679,10 @@ WHERE collection_id IN (SELECT id FROM collections t WHERE kind = '%s' AND (%s))
 		)`)
 	}
 
+	if opts.Todo {
+		whereExprs = append(whereExprs, `json_extract(n.metadata, '$.todo') = 1 AND json_extract(n.metadata, '$.done') IS NULL`)
+	}
+
 	if opts.CreatedStart != nil {
 		whereExprs = append(whereExprs, "created >= ?")
 		args = append(args, opts.CreatedStart)
