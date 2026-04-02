@@ -1237,10 +1237,11 @@ func (s *Server) getMissingBacklinkCodeActions(doc *document, docURI protocol.Do
 	return actions
 }
 
-// getTodoCodeActions returns code actions for toggling markdown checkbox TODOs
+// getTodoCodeActions returns code actions for managing markdown checkbox TODOs
 // on the line at the cursor position.
 // - On a `- [ ]` line: offers "Mark as done" → `- [x] ... (YYYY-MM-DD)`
 // - On a `- [x]` line: offers "Reopen TODO" → `- [ ] ...` (removes date suffix)
+// - On any other non-empty line: offers "Mark as TODO" → `- [ ] ...`
 func (s *Server) getTodoCodeActions(doc *document, docURI protocol.DocumentUri, cursorLine int) []protocol.CodeAction {
 	actions := []protocol.CodeAction{}
 	lines := doc.GetLines()
@@ -1274,7 +1275,7 @@ func (s *Server) getTodoCodeActions(doc *document, docURI protocol.DocumentUri, 
 				},
 			},
 		})
-	} else if strings.Contains(trimmed, "- [x] ") || strings.Contains(trimmed, "- [X] ") {
+	} else if strings.Contains(trimmed, "- [x] ") || strings.Contains(trimmed, "- [X] ") || strings.HasSuffix(trimmed, "- [x]") || strings.HasSuffix(trimmed, "- [X]") {
 		// Offer "Reopen TODO" — uncheck and remove trailing date like " (2026-04-02)"
 		newLine := strings.Replace(line, "- [x] ", "- [ ] ", 1)
 		newLine = strings.Replace(newLine, "- [X] ", "- [ ] ", 1)
@@ -1285,6 +1286,21 @@ func (s *Server) getTodoCodeActions(doc *document, docURI protocol.DocumentUri, 
 
 		actions = append(actions, protocol.CodeAction{
 			Title: "Reopen TODO",
+			Kind:  stringPtr(protocol.CodeActionKindQuickFix),
+			Edit: &protocol.WorkspaceEdit{
+				Changes: map[protocol.DocumentUri][]protocol.TextEdit{
+					docURI: {{Range: lineRange, NewText: newLine}},
+				},
+			},
+		})
+	} else if trimmed != "" {
+		// Offer "Mark as TODO" — prepend checkbox to line content
+		// Preserve leading whitespace
+		leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+		newLine := leading + "- [ ] " + trimmed
+
+		actions = append(actions, protocol.CodeAction{
+			Title: "Mark as TODO",
 			Kind:  stringPtr(protocol.CodeActionKindQuickFix),
 			Edit: &protocol.WorkspaceEdit{
 				Changes: map[protocol.DocumentUri][]protocol.TextEdit{
