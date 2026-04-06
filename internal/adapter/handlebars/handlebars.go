@@ -20,7 +20,6 @@ func Init(supportsUTF8 bool, logger util.Logger) {
 	helpers.RegisterJSON(logger)
 	helpers.RegisterList(supportsUTF8)
 	helpers.RegisterPrepend(logger)
-	helpers.RegisterShell(logger)
 	helpers.RegisterSubstring()
 }
 

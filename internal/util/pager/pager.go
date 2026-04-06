@@ -31,13 +31,13 @@ var PassthroughPager = &Pager{
 }
 
 // New creates a pager.Pager to be used to write a paginated text to the terminal.
-func New(pagerCmd opt.String, logger util.Logger) (*Pager, error) {
+func New(pagerCmd opt.String, shell string, logger util.Logger) (*Pager, error) {
 	pagerCmd = selectPagerCmd(pagerCmd)
 	if pagerCmd.IsNull() {
 		return PassthroughPager, nil
 	}
 
-	cmd := executil.CommandFromString(pagerCmd.String())
+	cmd := executil.CommandFromString(shell, pagerCmd.String())
 
 	r, w, err := os.Pipe()
 	if err != nil {

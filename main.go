@@ -181,7 +181,8 @@ func runAlias(container *cli.Container, args []string) (bool, error) {
 			cmdStr = `cd "` + notebook.Path + `" && ` + cmdStr
 		}
 
-		cmd := executil.CommandFromString(cmdStr, args[1:]...)
+		shell := executil.ResolveShell(container.Config.Tool.Shell)
+		cmd := executil.CommandFromString(shell, cmdStr, args[1:]...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

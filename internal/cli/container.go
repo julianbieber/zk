@@ -17,6 +17,7 @@ import (
 	"github.com/zk-org/zk/internal/adapter/term"
 	"github.com/zk-org/zk/internal/core"
 	"github.com/zk-org/zk/internal/util"
+	executil "github.com/zk-org/zk/internal/util/exec"
 	osutil "github.com/zk-org/zk/internal/util/os"
 	"github.com/zk-org/zk/internal/util/pager"
 	"github.com/zk-org/zk/internal/util/paths"
@@ -83,10 +84,9 @@ func NewContainer(version string) (*Container, error) {
 		os.Setenv("ZK_NOTEBOOK_DIR", notebookDir)
 	}
 
-	// Set the default shell if not already set
-	if osutil.GetOptEnv("ZK_SHELL").IsNull() && !config.Tool.Shell.IsEmpty() {
-		os.Setenv("ZK_SHELL", config.Tool.Shell.Unwrap())
-	}
+	// Register the shell helper with the resolved shell.
+	shell := executil.ResolveShell(config.Tool.Shell)
+	templateLoader.RegisterHelper("sh", hbhelpers.NewShellHelper(logger, shell))
 
 	return &Container{
 		Version:        version,
@@ -127,6 +127,7 @@ func NewContainer(version string) (*Container, error) {
 
 						loader.RegisterHelper("style", hbhelpers.NewStyleHelper(styler, logger))
 						loader.RegisterHelper("slug", hbhelpers.NewSlugHelper(language, logger))
+						loader.RegisterHelper("sh", hbhelpers.NewShellHelper(logger, executil.ResolveShell(config.Tool.Shell)))
 
 						linkFormatter, err := core.NewLinkFormatter(config.Format.Markdown, loader)
 						if err != nil {
@@ -236,7 +237,8 @@ func (c *Container) NewNoteFilter(opts fzf.NoteFilterOpts) *fzf.NoteFilter {
 }
 
 func (c *Container) NewNoteEditor(notebook *core.Notebook) (*editor.Editor, error) {
-	return editor.NewEditor(notebook.Config.Tool.Editor)
+	shell := executil.ResolveShell(notebook.Config.Tool.Shell)
+	return editor.NewEditor(notebook.Config.Tool.Editor, shell)
 }
 
 // Paginate creates an auto-closing io.Writer which will be automatically
@@ -257,6 +259,7 @@ func (c *Container) pager(noPager bool) (*pager.Pager, error) {
 	if noPager || !c.Terminal.IsInteractive() {
 		return pager.PassthroughPager, nil
 	} else {
-		return pager.New(c.Config.Tool.Pager, c.Logger)
+		shell := executil.ResolveShell(c.Config.Tool.Shell)
+		return pager.New(c.Config.Tool.Pager, shell, c.Logger)
 	}
 }

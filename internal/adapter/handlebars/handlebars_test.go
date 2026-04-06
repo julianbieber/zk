@@ -394,6 +394,7 @@ func testLoader(opts LoaderOpts) *Loader {
 
 	loader.RegisterHelper("style", helpers.NewStyleHelper(opts.Styler, &util.NullLogger))
 	loader.RegisterHelper("slug", helpers.NewSlugHelper("en", &util.NullLogger))
+	loader.RegisterHelper("sh", helpers.NewShellHelper(&util.NullLogger, "sh"))
 
 	formatter := func(context core.LinkFormatterContext) (string, error) {
 		return context.Path + " - " + context.Title, nil
