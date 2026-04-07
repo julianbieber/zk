@@ -26,6 +26,7 @@ type dao struct {
 	links       *LinkDAO
 	collections *CollectionDAO
 	metadata    *MetadataDAO
+	bookmarks   *BookmarkDAO
 }
 
 func NewNoteIndex(notebookPath string, db *DB, logger util.Logger) *NoteIndex {
@@ -132,7 +133,12 @@ func (ni *NoteIndex) Add(note core.Note) (id core.NoteID, err error) {
 			return err
 		}
 
-		return ni.associateTags(dao.collections, id, note.Tags)
+		err = ni.associateTags(dao.collections, id, note.Tags)
+		if err != nil {
+			return err
+		}
+
+		return ni.syncBookmarks(dao, note)
 	})
 
 	err = errors.Wrapf(err, "%v: failed to index the note", note.Path)
@@ -224,6 +230,7 @@ func (ni *NoteIndex) Update(note core.Note) error {
 		if err != nil {
 			return err
 		}
+		note.ID = id
 
 		// Reset links
 		err = dao.links.RemoveAll(id)
@@ -240,7 +247,12 @@ func (ni *NoteIndex) Update(note core.Note) error {
 		if err != nil {
 			return err
 		}
-		return ni.associateTags(dao.collections, id, note.Tags)
+		err = ni.associateTags(dao.collections, id, note.Tags)
+		if err != nil {
+			return err
+		}
+
+		return ni.syncBookmarks(dao, note)
 	})
 
 	return errors.Wrapf(err, "%v: failed to update note index", note.Path)
@@ -253,6 +265,27 @@ func (ni *NoteIndex) associateTags(collections *CollectionDAO, noteId core.NoteI
 			return err
 		}
 		_, err = collections.Associate(noteId, tagId)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// syncBookmarks extracts external links from the note and stores them as bookmarks.
+func (ni *NoteIndex) syncBookmarks(dao *dao, note core.Note) error {
+	// Remove existing bookmarks from this note, then re-add.
+	err := dao.bookmarks.RemoveBySourceNote(note.ID)
+	if err != nil {
+		return err
+	}
+
+	for _, link := range note.Links {
+		if !link.IsExternal {
+			continue
+		}
+		_, err := dao.bookmarks.Add(link.Title, link.Href, note.ID, note.Tags)
 		if err != nil {
 			return err
 		}
@@ -339,6 +372,7 @@ func (ni *NoteIndex) commit(transaction func(dao *dao) error) error {
 				links:       NewLinkDAO(tx, ni.logger),
 				collections: NewCollectionDAO(tx, ni.logger),
 				metadata:    NewMetadataDAO(tx),
+				bookmarks:   NewBookmarkDAO(tx, ni.logger),
 			}
 			return transaction(&dao)
 		})

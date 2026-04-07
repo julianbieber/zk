@@ -19,6 +19,7 @@ type Notebook struct {
 	Parser NoteContentParser
 
 	index                 NoteIndex
+	bookmarks             BookmarkRepository
 	templateLoaderFactory TemplateLoaderFactory
 	idGeneratorFactory    IDGeneratorFactory
 	fs                    FileStorage
@@ -37,6 +38,7 @@ func NewNotebook(
 		Config:                config,
 		Parser:                ports.NoteContentParser,
 		index:                 ports.NoteIndex,
+		bookmarks:             ports.BookmarkRepository,
 		templateLoaderFactory: ports.TemplateLoaderFactory,
 		idGeneratorFactory:    ports.IDGeneratorFactory,
 		fs:                    ports.FS,
@@ -47,6 +49,7 @@ func NewNotebook(
 
 type NotebookPorts struct {
 	NoteIndex             NoteIndex
+	BookmarkRepository    BookmarkRepository
 	NoteContentParser     NoteContentParser
 	TemplateLoaderFactory TemplateLoaderFactory
 	IDGeneratorFactory    IDGeneratorFactory
@@ -358,6 +361,25 @@ func (n *Notebook) NewCollectionFormatter(templateString string) (CollectionForm
 	}
 
 	return newCollectionFormatter(template)
+}
+
+// FindBookmarks returns bookmarks matching the given options.
+func (n *Notebook) FindBookmarks(opts BookmarkFindOpts) ([]Bookmark, error) {
+	return n.bookmarks.FindAll(opts)
+}
+
+// NewBookmarkFormatter returns a BookmarkFormatter for the given template.
+func (n *Notebook) NewBookmarkFormatter(templateString string) (BookmarkFormatter, error) {
+	templates, err := n.templateLoaderFactory(n.Config.Note.Lang)
+	if err != nil {
+		return nil, err
+	}
+	template, err := templates.LoadTemplate(templateString)
+	if err != nil {
+		return nil, err
+	}
+
+	return newBookmarkFormatter(template)
 }
 
 // NewLinkFormatter returns a LinkFormatter used to generate internal links between notes.

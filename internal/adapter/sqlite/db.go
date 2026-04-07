@@ -217,6 +217,49 @@ func (db *DB) migrate() error {
 				// https://github.com/zk-org/zk/issues/170#issuecomment-1107848441
 				NeedsReindexing: true,
 			},
+
+			{ // 8
+				SQL: []string{
+					// Initial bookmarks schema (superseded by v9).
+					// Kept as no-op for databases that already ran it.
+				},
+			},
+
+			{ // 9
+				SQL: []string{
+					// Drop old bookmarks tables if they exist (from v8).
+					`DROP TABLE IF EXISTS bookmark_tags`,
+					`DROP TABLE IF EXISTS bookmarks`,
+					`DROP INDEX IF EXISTS index_bookmarks_url`,
+					`DROP INDEX IF EXISTS index_bookmark_tags_name`,
+					`DROP INDEX IF EXISTS index_bookmark_tags_bookmark_id`,
+
+					// Bookmarks extracted from notes during indexing
+					`CREATE TABLE IF NOT EXISTS bookmarks (
+						id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+						title TEXT DEFAULT('') NOT NULL,
+						url TEXT NOT NULL,
+						source_note_id INTEGER NOT NULL REFERENCES notes(id)
+							ON DELETE CASCADE,
+						created DATETIME DEFAULT(CURRENT_TIMESTAMP) NOT NULL,
+						UNIQUE(url, source_note_id)
+					)`,
+					`CREATE INDEX IF NOT EXISTS index_bookmarks_url ON bookmarks (url)`,
+					`CREATE INDEX IF NOT EXISTS index_bookmarks_source ON bookmarks (source_note_id)`,
+
+					// Bookmark tags (inherited from source note)
+					`CREATE TABLE IF NOT EXISTS bookmark_tags (
+						id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+						bookmark_id INTEGER NOT NULL REFERENCES bookmarks(id)
+							ON DELETE CASCADE,
+						name TEXT NOT NULL,
+						UNIQUE(bookmark_id, name)
+					)`,
+					`CREATE INDEX IF NOT EXISTS index_bookmark_tags_name ON bookmark_tags (name)`,
+					`CREATE INDEX IF NOT EXISTS index_bookmark_tags_bookmark_id ON bookmark_tags (bookmark_id)`,
+				},
+				NeedsReindexing: true,
+			},
 		}
 
 		needsReindexing := false
