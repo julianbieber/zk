@@ -200,6 +200,8 @@ func (cmd *LinkList) bookmarkTemplate() string {
 var defaultBookmarkFormats = map[string]string{
 	"json":  `{{json .}}`,
 	"jsonl": `{{json .}}`,
-	"short": `{{title}}`,
-	"full":  `[{{title}}]({{url}}){{#if tags}} [{{#each tags}}{{#unless @first}}, {{/unless}}{{this}}{{/each}}]{{/if}}{{#if sources}} ({{#each sources}}{{#unless @first}}, {{/unless}}{{this}}{{/each}}){{/if}}`,
+	"short": `{{style "title" title}} {{style "understate" url}}`,
+	"full": `{{style "title" title}} {{style "understate" url}}{{#if tags}}
+    {{#each tags}}{{#unless @first}} {{/unless}}{{style "term" this}}{{/each}}{{/if}}{{#if sources}}
+    {{#each sources}}{{#unless @first}}, {{/unless}}{{style "path" this}}{{/each}}{{/if}}`,
 }
