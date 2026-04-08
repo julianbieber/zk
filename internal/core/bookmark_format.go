@@ -28,3 +28,22 @@ type bookmarkFormatRenderContext struct {
 	Sources []string   `json:"sources"`
 	Created time.Time  `json:"created"`
 }
+
+// BookmarkTagFormatter formats bookmark tag counts to be printed on the screen.
+type BookmarkTagFormatter func(tag BookmarkTagCount) (string, error)
+
+func newBookmarkTagFormatter(template Template) (BookmarkTagFormatter, error) {
+	return func(tag BookmarkTagCount) (string, error) {
+		return template.Render(bookmarkTagFormatRenderContext{
+			Name:          tag.Name,
+			BookmarkCount: tag.BookmarkCount,
+		})
+	}, nil
+}
+
+// bookmarkTagFormatRenderContext holds the variables available to the
+// bookmark tag formatting templates.
+type bookmarkTagFormatRenderContext struct {
+	Name          string `json:"name"`
+	BookmarkCount int    `json:"bookmarkCount" handlebars:"bookmark-count"`
+}

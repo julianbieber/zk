@@ -382,6 +382,25 @@ func (n *Notebook) NewBookmarkFormatter(templateString string) (BookmarkFormatte
 	return newBookmarkFormatter(template)
 }
 
+// FindBookmarkTags returns all bookmark tags with their bookmark counts.
+func (n *Notebook) FindBookmarkTags() ([]BookmarkTagCount, error) {
+	return n.bookmarks.FindTags()
+}
+
+// NewBookmarkTagFormatter returns a BookmarkTagFormatter for the given template.
+func (n *Notebook) NewBookmarkTagFormatter(templateString string) (BookmarkTagFormatter, error) {
+	templates, err := n.templateLoaderFactory(n.Config.Note.Lang)
+	if err != nil {
+		return nil, err
+	}
+	template, err := templates.LoadTemplate(templateString)
+	if err != nil {
+		return nil, err
+	}
+
+	return newBookmarkTagFormatter(template)
+}
+
 // NewLinkFormatter returns a LinkFormatter used to generate internal links between notes.
 func (n *Notebook) NewLinkFormatter() (LinkFormatter, error) {
 	templates, err := n.templateLoaderFactory(n.Config.Note.Lang)

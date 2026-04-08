@@ -1,8 +1,6 @@
 package core
 
 import (
-	"fmt"
-	"regexp"
 	"time"
 )
 
@@ -29,18 +27,14 @@ type BookmarkFindOpts struct {
 	Match string
 }
 
+// BookmarkTagCount holds a tag name and the number of bookmarks with that tag.
+type BookmarkTagCount struct {
+	Name          string
+	BookmarkCount int
+}
+
 // BookmarkRepository provides read access to bookmarks.
 type BookmarkRepository interface {
 	FindAll(opts BookmarkFindOpts) ([]Bookmark, error)
-}
-
-var markdownLinkRegex = regexp.MustCompile(`^\[(.+?)\]\((.+?)\)$`)
-
-// ParseMarkdownLink extracts the title and URL from a markdown link string.
-func ParseMarkdownLink(input string) (title string, url string, err error) {
-	matches := markdownLinkRegex.FindStringSubmatch(input)
-	if matches == nil {
-		return "", "", fmt.Errorf("invalid markdown link syntax, expected [Title](URL): %s", input)
-	}
-	return matches[1], matches[2], nil
+	FindTags() ([]BookmarkTagCount, error)
 }

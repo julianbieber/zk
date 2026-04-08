@@ -25,3 +25,14 @@ func (s *BookmarkStore) FindAll(opts core.BookmarkFindOpts) ([]core.Bookmark, er
 	})
 	return bookmarks, err
 }
+
+func (s *BookmarkStore) FindTags() ([]core.BookmarkTagCount, error) {
+	var tags []core.BookmarkTagCount
+	err := s.db.WithTransaction(func(tx Transaction) error {
+		dao := NewBookmarkDAO(tx, s.logger)
+		var err error
+		tags, err = dao.FindTags()
+		return err
+	})
+	return tags, err
+}

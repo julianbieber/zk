@@ -164,3 +164,32 @@ func (d *BookmarkDAO) FindAll(opts core.BookmarkFindOpts) ([]core.Bookmark, erro
 
 	return bookmarks, nil
 }
+
+// FindTags returns all bookmark tags with their associated bookmark count.
+func (d *BookmarkDAO) FindTags() ([]core.BookmarkTagCount, error) {
+	wrap := errors.Wrapper("failed to list bookmark tags")
+
+	rows, err := d.tx.Query(`
+		SELECT bt.name, COUNT(DISTINCT b.url) as bookmark_count
+		  FROM bookmark_tags bt
+		  JOIN bookmarks b ON bt.bookmark_id = b.id
+		 GROUP BY bt.name
+		 ORDER BY bookmark_count DESC, bt.name ASC
+	`)
+	if err != nil {
+		return nil, wrap(err)
+	}
+	defer rows.Close()
+
+	var tags []core.BookmarkTagCount
+	for rows.Next() {
+		var tag core.BookmarkTagCount
+		err := rows.Scan(&tag.Name, &tag.BookmarkCount)
+		if err != nil {
+			return tags, wrap(err)
+		}
+		tags = append(tags, tag)
+	}
+
+	return tags, nil
+}
